@@ -50,12 +50,12 @@ def global_ranking(question, file, tokenizer, model, k=3):
 
 
 # Выводим найденные фрагменты
-if __name__ == '__main__':
-    path = 'docs/docs_json/Service_registratsii.json'
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    model = AutoModel.from_pretrained("bert-base-uncased")
-    question = 'Как заполнять телефон?'
-
-    content_corpus, content_idxs = global_ranking(question, path, tokenizer, model, k=5)
-    for idx in content_idxs:
-        print(content_corpus[idx])
+# if __name__ == '__main__':
+#     path = 'docs/docs_json/Service_registratsii.json'
+#     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+#     model = AutoModel.from_pretrained("bert-base-uncased")
+#     question = 'Как создать новую декларкацию'
+#
+#     content_corpus, content_idxs = global_ranking(question, path, tokenizer, model, k=5)
+#     for idx in content_idxs:
+#         print(content_corpus[idx])
