@@ -64,21 +64,24 @@ async def question_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_name = selected_file.replace(' ', '_')
         file_name = f'{file_name}_splited_emb.json'
         path_to_file = os.path.join(context.bot_data['path_to_docs_dir'], file_name)
-        with open(path_to_file, 'r', encoding='utf-8') as f:
-            data_list = json.load(f)['data']
-        relevant_chunks, _ = relevant_chunk_finder(data_list=data_list,
-                                                question=user_question,
-                                                tokenizer=context.bot_data['tokenizer'],
-                                                model=context.bot_data['model'])
-        # теперь генерируем ответ
-        answer = get_answer(contexts=relevant_chunks,
-                            question=user_question,
-                            tokenizer=context.bot_data['tokenizer'],
-                            model=context.bot_data['model'])
-
+        # если вопрос короткий или вызывает ошибку (берутся n_grams), о просто просим перезадать вопрос нормально
+        try:
+            with open(path_to_file, 'r', encoding='utf-8') as f:
+                data_list = json.load(f)['data']
+            relevant_chunks, _ = relevant_chunk_finder(data_list=data_list,
+                                                       question=user_question,
+                                                       tokenizer=context.bot_data['tokenizer'],
+                                                       model=context.bot_data['model'])
+            # теперь генерируем ответ
+            answer = get_answer(contexts=relevant_chunks,
+                                question=user_question,
+                                tokenizer=context.bot_data['tokenizer'],
+                                model=context.bot_data['model'])
+        except:
+            answer = user_question
         # Жуткий костыль, мне очень стыдно
         if answer == user_question:
-            await update.message.reply_text(text='Пожалуйста, перефразируйте вопрос, так как я не смог найти ответ на ваш вопрос.')
+            await update.message.reply_text(text='Пожалуйста, перефразируйте вопрос, так как я не смог найти ответ...')
         else:
             await update.message.reply_text(text=f'Ответ на ваш вопрос:\n{answer}\n')
     else:

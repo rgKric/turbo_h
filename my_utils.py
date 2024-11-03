@@ -46,7 +46,7 @@ def split_document(json_file, tokenizer, max_context_length=450, overlap=100):
 def cos_similarities(embeddings, q_embedding):
     similarities = []
     for i in range(len(embeddings)):
-        similarity = cosine_similarity(q_embedding, embeddings[i]).mean()
+        similarity = cosine_similarity(q_embedding, embeddings[i]).max()
         similarities.append(similarity)
     return similarities
 
@@ -54,7 +54,7 @@ def cos_similarities(embeddings, q_embedding):
 def euclidean_similarities(embeddings, q_embedding):
     similarities = []
     for i in range(len(embeddings)):
-        similarity = euclidean_distances(q_embedding, embeddings[i]).mean()
+        similarity = euclidean_distances(q_embedding, embeddings[i]).max()
         similarities.append(similarity)
     return similarities
 
@@ -70,13 +70,11 @@ def cleaning(content, ru_stops, n):
         if word not in ru_stops:
             lemma = morph.parse(word)[0].normal_form
             processed_words.append(lemma)
-    n_grams = set()
-    for i in range(1, n + 1):
-        i_gram = set(nltk.ngrams(processed_words, i))
-        n_grams = n_grams.union(i_gram)
-    return set(n_grams)
 
-def precision(context, question, n=3):
+    n_grams = set(nltk.ngrams(processed_words, n))
+    return n_grams
+
+def precision(context, question, n=2):
     # нормализация нашего чудесного текста
     with open('stops.txt', 'r', encoding='utf-8') as f:
         ru_stops = set(f.read().splitlines())
@@ -84,6 +82,25 @@ def precision(context, question, n=3):
     set_context = cleaning(context, ru_stops, n)
     score = len(set_context.intersection(set_question))/len(set_question)
     return score
+
+
+def calculate_avg_rank(rankings_A, rankings_B, weight_A, weight_B, n=4):
+    rankings_dict = {}
+    for idx, arg in enumerate(rankings_A):
+        if arg not in rankings_dict:
+            rankings_dict[arg] = []
+        rankings_dict[arg].append(idx + 1)
+
+    for idx, arg in enumerate(rankings_B):
+        if arg not in rankings_dict:
+            rankings_dict[arg] = []
+        rankings_dict[arg].append(idx + 1)
+    # Calculate average rank for each argument
+    avg_rank_dict = {arg: ranks[0]*weight_A + ranks[1]*weight_B for arg, ranks in rankings_dict.items()}
+    # Sort the arguments based on their average rank in ascending order (lower rank is better)
+    sorted_avg_rankings = sorted(avg_rank_dict.items(), key=lambda x: x[1])
+    best = [sorted_avg_rankings[i][0] for i in range(n)]
+    return best
 
 
 def get_embeddings(text, tokenizer, model):
@@ -97,15 +114,14 @@ def get_embeddings(text, tokenizer, model):
                         output_hidden_states=True)
 
     last_hidden_state = outputs.encoder_last_hidden_state
-    embedding = last_hidden_state.mean(dim=1).squeeze().cpu().tolist()
+    embedding = last_hidden_state.mean(dim=1).cpu().tolist()
     return embedding
 
 
 def relevant_chunk_finder(data_list,
                           question,
                           tokenizer,
-                          model,
-                          similarity_type='precision'):
+                          model, n=4):
     '''
     Выбирает наиболее релевантный раздел, основываясь на метрике similarity_type
 
@@ -113,7 +129,7 @@ def relevant_chunk_finder(data_list,
     :param question: вопрос в формате str
     :param tokenizer: tokenizer
     :param model: model
-    :param similarity_type: способ сравнения схожести вектора вопроса и контекста ['precision', 'cosin', 'euclidean']
+    :param n: колчество релевантных контекстов
     :return: раздел, который ближе всего к вопросу в формате List[str]
     '''
     model.eval()
@@ -121,7 +137,6 @@ def relevant_chunk_finder(data_list,
     if 'embeddings' in list(data_list[0].keys()):
         data = data_list.copy()
     else:
-        print('no embeddings, generating...')
         data = data_list.copy()
         for i in tqdm(range(len(data))):
             content = data[i]['content']
@@ -130,33 +145,33 @@ def relevant_chunk_finder(data_list,
                 embedding = get_embeddings(text, tokenizer, model)
                 data[i]['embeddings'].append(embedding)
 
-    # если precision, то схожесть по множеству слов, иначе схожесть эмбеддингов
-    if similarity_type == 'precision':
-        # разные n-грамы, потому что если есть сходство для 3х, то это лучше, чем по 1, кмк
-        similarities = []
-        for i in range(len(data)):
-            max_similarity = 0
-            for j in range(len(data[i]['content'])):
-                content = data[i]['content'][j]
-                similarity = precision(context=content, question=question)
-                if max_similarity < similarity:
-                    max_similarity = similarity
-            similarities.append(max_similarity)
-    else:
-        # получаем эмбеддинг вопроса
-        print('Question embedding generating!')
-        q_embedding = get_embeddings(question.replace('?', ''), tokenizer, model)
-        print('DONE')
-        embeddings = [data[i]['embeddings'] for i in range(len(data))]
-        # находим среднее косинусное расстояние для каждого раздела до вопроса
-        if similarity_type == 'cosin':
-            similarities = cos_similarities(embeddings, q_embedding)
-        elif similarity_type == 'euclidean':
-            similarities = euclidean_similarities(embeddings, q_embedding)
+    # расчет precision
+    similarities_prec = []
+    for i in range(len(data)):
+        max_similarity = 0
+        for j in range(len(data[i]['content'])):
+            content = data[i]['content'][j]
+            similarity = precision(context=content, question=question)
+            if max_similarity < similarity:
+                max_similarity = similarity
+        similarities_prec.append(max_similarity)
+    # получаем эмбеддинг вопроса
+    q_embedding = get_embeddings(question.replace('?', ''), tokenizer, model)
+    embeddings = [data[i]['embeddings'] for i in range(len(data))]
+    # находим среднее косинусное сходство для каждого раздела до вопроса
+    similarities_cosin = cos_similarities(embeddings, q_embedding)
 
-    # берем самые крутые тексты (мб и 1 текст)
-    most_relevant = np.argmax(similarities)
-    return data[most_relevant]['content'], similarities
+    # если в precision не все 0, то ранжируем, иначе только косинусное сходство
+    if sum(similarities_prec) != 0:
+        best = calculate_avg_rank(np.argsort(similarities_prec)[::-1],
+                                  np.argsort(similarities_cosin)[::-1],
+                                  0.7, 0.3, n=n)
+    else:
+        best = np.argsort(similarities_cosin)[::-1][:n]
+    most_relevant = []
+    for i in best:
+        most_relevant += data[i]['content']
+    return most_relevant, best
 
 
 def get_answer(contexts, question, tokenizer, model):
