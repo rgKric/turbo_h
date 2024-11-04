@@ -99,10 +99,18 @@ if __name__ == '__main__':
     # загрузка модели и токенизатор и пути к файлам
     if os.path.exists('./t5_model/'):
         saved_checkpoint = './t5_model/'
+        tokenizer = AutoTokenizer.from_pretrained(saved_checkpoint)
+        model = T5ForConditionalGeneration.from_pretrained(saved_checkpoint)
     else:
+        # если не загружена модель, то подгружаем с hugging face  сохраняем в новую папку
+        new_folder = './t5_model'
         saved_checkpoint = 'hivaze/AAQG-QA-QG-FRED-T5-1.7B'
-    tokenizer = AutoTokenizer.from_pretrained(saved_checkpoint)
-    model = T5ForConditionalGeneration.from_pretrained(saved_checkpoint)
+        tokenizer = AutoTokenizer.from_pretrained(saved_checkpoint)
+        model = T5ForConditionalGeneration.from_pretrained(saved_checkpoint)
+        os.makedirs(new_folder, exist_ok=True)
+        model.save_pretrained(new_folder)
+        tokenizer.save_pretrained(new_folder)
+
     app.bot_data['model'] = model.to(device)
     app.bot_data['tokenizer'] = tokenizer
     app.bot_data['path_to_docs_dir'] = 'docs/docs_json/'
