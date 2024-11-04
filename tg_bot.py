@@ -10,6 +10,8 @@ import torch
 file_options = {
     "file1": "Naumen Desk",
     "file2": "Service registratsii",
+    "file3": "frmo rukovodstvo",
+    "file4": "instructcia_ttc"
 }
 
 # Хранилище данных пользователя
